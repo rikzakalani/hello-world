@@ -1,2 +1,3 @@
-console.log('hola');
-console.log('adios');
+console.error('hola')
+
+adsasdgsgfsdfggdsfgsdfg
