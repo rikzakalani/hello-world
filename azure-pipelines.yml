@@ -1,19 +1,165 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- master
+  batch: true
+  branches:
+    include:
+      - main
 
-pool:
-  vmImage: ubuntu-latest
+pr:
+  branches:
+    include:
+      - main
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+schedules:
+  - cron: '0 0 * * 0'
+    displayName: Weekly build
+    branches:
+      include:
+        - main
+    always: true
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+resources:
+  repositories:
+    - repository: OpsGuildAutomationRepo
+      type: git
+      name: Engineering/OpsGuild.Automation
+      ref: refs/heads/main
+    - repository: templates
+      type: github
+      name: osisoft/OSI-Samples
+      endpoint: osisoft/OSI-Samples
+
+variables:
+  - template: '/miscellaneous/build_templates/variables.yml@templates'
+  - name: analysisProject
+    value: OMF_BU_Python
+
+jobs:
+  - job: Tests_ADH
+    pool:
+      name: 00-OSIManaged-Containers
+      demands: Agent.OS -equals Linux
+    variables:
+      - name: Endpoints.0.Selected
+        value: true
+      - name: Endpoints.1.Selected
+        value: false
+      - name: Endpoints.2.Selected
+        value: false
+      - name: Endpoints.0.TenantId
+        value: $(TenantId)
+      - name: Endpoints.0.NamespaceId
+        value: $(NamespaceId)
+      - name: Endpoints.0.ClientId
+        value: $(ClientId)
+      - name: Endpoints.0.ClientSecret
+        value: $(ClientSecret)
+      - name: Endpoints.0.Resource
+        value: $(Resource)
+    steps:
+      - template: '/miscellaneous/build_templates/appsettings.yml@templates'
+        parameters:
+          secrets: 'TenantId, NamespaceId, ClientId, ClientSecret, Resource'
+
+      - script: |
+          echo Install tools
+          pip install setuptools wheel
+          pip install unittest-xml-reporting    
+          pip install pytest
+          pip install pytest-cov
+          echo Install requirements
+          pip install -r requirements.txt
+          echo Run tests
+          python -m pytest ./test.py --junitxml=junit/test-results.xml 
+          echo Complete
+        displayName: 'Run tests'
+      - task: PublishTestResults@2
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFiles: '**/test-*.xml'
+          failTaskOnFailedTests: true
+          testRunTitle: '$(Agent.JobName) on $(Agent.OS)'
+        displayName: 'Publish test results'
+
+  - job: Tests_PI
+    pool:
+      name: 00-OSIManaged-Build
+      demands: PYTHON
+    variables:
+      - name: Endpoints.0.Selected
+        value: false
+      - name: Endpoints.1.Selected
+        value: false
+      - name: Endpoints.2.Selected
+        value: true
+      - name: Endpoints.2.Resource
+        value: $(PIWebAPI)
+      - name: Endpoints.2.Username
+        value: $(Username)
+      - name: Endpoints.2.Password
+        value: $(Password)
+      - name: Endpoints.2.DataArchiveName
+        value: $(DataArchiveName)
+      - name: Endpoints.2.VerifySSL
+        value: false
+    steps:
+      - template: '/miscellaneous/build_templates/appsettings.yml@templates'
+        parameters:
+          secrets: 'Username, Password, PIWebAPI, DataArchiveName'
+
+      - script: |
+          echo Install tools
+          pip install setuptools wheel
+          pip install unittest-xml-reporting    
+          pip install pytest
+          pip install pytest-cov
+          echo Install requirements
+          pip install -r requirements.txt
+          echo Run tests
+          python -m pytest ./test.py --junitxml=junit/test-results.xml 
+          echo Complete
+        displayName: 'Run tests'
+      - task: PublishTestResults@2
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFiles: '**/test-*.xml'
+          failTaskOnFailedTests: true
+          testRunTitle: '$(Agent.JobName) on $(Agent.OS)'
+        displayName: 'Publish test results'
+
+  - job: Tests_EDS
+    pool:
+      name: 00-OSIManaged-Build
+      demands: PYTHON
+    variables:
+      - name: Endpoints.0.Selected
+        value: false
+      - name: Endpoints.1.Selected
+        value: true
+      - name: Endpoints.2.Selected
+        value: false
+    steps:
+      - template: '/miscellaneous/build_templates/appsettings.yml@templates'
+
+      - script: |
+          echo Install tools
+          pip install setuptools wheel
+          pip install unittest-xml-reporting    
+          pip install pytest
+          pip install pytest-cov
+          echo Install requirements
+          pip install -r requirements.txt
+          echo Run tests
+          python -m pytest ./test.py --junitxml=junit/test-results.xml 
+          echo Complete
+        displayName: 'Run tests'
+      - task: PublishTestResults@2
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFiles: '**/test-*.xml'
+          failTaskOnFailedTests: true
+          testRunTitle: '$(Agent.JobName) on $(Agent.OS)'
+        displayName: 'Publish test results'
+
+  - template: '/miscellaneous/build_templates/code-analysis.yml@templates'
+    parameters:
+      useRequirementsTxt: true
